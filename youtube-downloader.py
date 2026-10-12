@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """
-AS Youtube Downloader — based on yt-dlp — version 1.6.3
+AS Youtube Downloader — based on yt-dlp — version 1.6.4
 """
 
 import subprocess
 import sys
 import re
 import os
+import json
 import shutil
 import threading
 import itertools
@@ -18,7 +19,7 @@ init(autoreset=True)
 
 # ─── Constants ────────────────────────────────────────────────────────────────
 
-VERSION       = "1.6.3"
+VERSION       = "1.6.4"
 DEFAULT_DIR   = str(Path.home() / "Downloads")
 
 AUDIO_FORMATS = ["MP3", "WAV", "FLAC", "M4A", "OPUS"]
@@ -671,9 +672,196 @@ def build_cmd(url: str, opts: dict) -> list:
     return cmd
 
 
+# ─── Media Info Extractor ───────────────────────────────────────────────────
+
+def format_size(num_bytes: float | None) -> str:
+    """Format bytes into a human-readable string (e.g. 145.2 MB)."""
+    if not num_bytes:
+        return "Unknown"
+    for unit in ["B", "KB", "MB", "GB"]:
+        if num_bytes < 1024.0:
+            return f"{num_bytes:.1f} {unit}"
+        num_bytes /= 1024.0
+    return f"{num_bytes:.1f} TB"
+
+
+def fetch_media_info(url: str, opts: dict) -> dict | None:
+    """
+    Query media metadata for URL before download starts.
+    Tries the yt_dlp Python library first; falls back to yt-dlp CLI --dump-json.
+    """
+    is_audio = opts.get("fmt") in AUDIO_FORMATS
+    if is_audio:
+        fmt_spec = "bestaudio/best"
+    else:
+        fmt_spec = VIDEO_QUALITY.get(opts.get("quality", "1080p"), "bestvideo+bestaudio/best")
+
+    js_runtime = detect_js_runtime()
+
+    # Attempt 1: yt_dlp Python package
+    try:
+        import yt_dlp
+
+        ydl_params = {
+            "quiet": True,
+            "skip_download": True,
+            "no_warnings": True,
+            "format": fmt_spec,
+            "noplaylist": not opts.get("playlist", False),
+        }
+        if js_runtime:
+            parts = js_runtime.split(":", 1)
+            name = parts[0]
+            path = parts[1] if len(parts) > 1 else name
+            ydl_params["js_runtimes"] = {name: {"path": path}}
+
+        if opts.get("cookies_browser"):
+            ydl_params["cookiesfrombrowser"] = (opts["cookies_browser"],)
+
+        with yt_dlp.YoutubeDL(ydl_params) as ydl:
+            return ydl.extract_info(url, download=False)
+    except Exception:
+        pass
+
+    # Attempt 2: yt-dlp CLI subprocess fallback
+    if shutil.which("yt-dlp"):
+        cmd = ["yt-dlp", "--dump-json", "--no-download", "-f", fmt_spec]
+        if js_runtime:
+            cmd += ["--js-runtimes", js_runtime]
+        if not opts.get("playlist", False):
+            cmd += ["--no-playlist"]
+        if opts.get("cookies_browser"):
+            cmd += ["--cookies-from-browser", opts["cookies_browser"]]
+        cmd.append(url)
+
+        try:
+            res = subprocess.run(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=25,
+            )
+            if res.returncode == 0 and res.stdout.strip():
+                first_line = res.stdout.strip().split("\n")[0]
+                return json.loads(first_line)
+        except Exception:
+            pass
+
+    return None
+
+
+def display_media_info(info: dict, opts: dict):
+    """
+    Format and display video/audio metadata matching the CLI aesthetic.
+    """
+    if not info:
+        return
+
+    is_audio = opts.get("fmt") in AUDIO_FORMATS
+
+    # Handle full playlist
+    if info.get("_type") == "playlist" or ("entries" in info and not info.get("duration")):
+        section("Playlist Details")
+        title = info.get("title") or "Unknown Playlist"
+        uploader = info.get("uploader") or info.get("channel") or "Unknown"
+        count = info.get("playlist_count") or len(info.get("entries") or [])
+        print(f"  {Fore.WHITE}Playlist:    {Fore.CYAN}{title}")
+        print(f"  {Fore.WHITE}Channel:     {Fore.CYAN}{uploader}")
+        if count:
+            print(f"  {Fore.WHITE}Videos:      {Fore.CYAN}{count} items")
+        q_label = opts.get("quality", "highest")
+        print(f"  {Fore.WHITE}Format:      {Fore.CYAN}{opts.get('fmt', 'MP4')} [{q_label}]")
+        return
+
+    section_title = "Audio Details" if is_audio else "Video Details"
+    section(section_title)
+
+    title = info.get("title") or "Unknown"
+    channel = info.get("channel") or info.get("uploader") or "Unknown"
+
+    # Duration formatting
+    duration = info.get("duration_string")
+    if not duration and info.get("duration"):
+        dur = int(info["duration"])
+        m, s = divmod(dur, 60)
+        h, m = divmod(m, 60)
+        duration = f"{h:02d}:{m:02d}:{s:02d}" if h else f"{m:02d}:{s:02d}"
+    duration = duration or "Unknown"
+
+    req_formats = info.get("requested_formats") or [info]
+    v_fmt = next((f for f in req_formats if f.get("vcodec") and f.get("vcodec") != "none"), None)
+    a_fmt = next((f for f in req_formats if f.get("acodec") and f.get("acodec") != "none"), None)
+
+    # Video details & quality
+    if not is_audio:
+        if v_fmt:
+            res = v_fmt.get("resolution") or (f"{v_fmt.get('width')}x{v_fmt.get('height')}" if v_fmt.get("height") else "")
+            fps = v_fmt.get("fps")
+            vcodec = (v_fmt.get("vcodec") or "").split(".")[0]
+            v_parts = []
+            if res:
+                v_parts.append(res)
+            if fps:
+                v_parts.append(f"@{fps}fps")
+            if vcodec and vcodec != "none":
+                v_parts.append(vcodec)
+            v_spec = " ".join(v_parts)
+            q_label = opts.get("quality", "")
+            v_display = f"{q_label} ({v_spec})" if q_label and v_spec else (v_spec or q_label or "Default")
+        else:
+            v_display = opts.get("quality", "highest")
+        q_line = f"Quality:     {Fore.CYAN}{v_display}"
+    else:
+        q_label = opts.get("quality", "highest")
+        q_line = f"Quality:     {Fore.CYAN}{q_label.title()} (target quality)"
+
+    # Audio details
+    if a_fmt:
+        acodec = (a_fmt.get("acodec") or "").split(".")[0]
+        abr = a_fmt.get("abr")
+        asr = a_fmt.get("asr")
+        a_parts = []
+        if acodec and acodec != "none":
+            a_parts.append(acodec)
+        if abr:
+            a_parts.append(f"~{int(abr)} kbps")
+        if asr:
+            a_parts.append(f"{asr//1000} kHz")
+        a_display = " @ ".join(a_parts[:2])
+        if len(a_parts) > 2:
+            a_display += f" ({a_parts[2]})"
+    else:
+        a_display = "Default audio"
+
+    # Target format & features
+    fmt_target = opts.get("fmt", "MP4")
+    tags = []
+    if opts.get("subtitles"):
+        tags.append(f"subs: {opts.get('sub_lang', 'en')}")
+    if opts.get("sponsorblock"):
+        tags.append("SponsorBlock")
+    if tags:
+        fmt_target += f"  [{Style.RESET_ALL}" + ", ".join(tags) + f"{Fore.CYAN}]"
+
+    # Estimated size calculation
+    total_bytes = sum(f.get("filesize") or f.get("filesize_approx") or 0 for f in req_formats)
+    if total_bytes == 0:
+        total_bytes = info.get("filesize") or info.get("filesize_approx") or 0
+
+    print(f"  {Fore.WHITE}Title:       {Fore.CYAN}{title}")
+    print(f"  {Fore.WHITE}Channel:     {Fore.CYAN}{channel}")
+    print(f"  {Fore.WHITE}Duration:    {Fore.CYAN}{duration}")
+    print(f"  {Fore.WHITE}{q_line}")
+    print(f"  {Fore.WHITE}Audio:       {Fore.CYAN}{a_display}")
+    print(f"  {Fore.WHITE}Format:      {Fore.CYAN}{fmt_target}")
+    if total_bytes > 0:
+        print(f"  {Fore.WHITE}Est. Size:   {Fore.CYAN}~{format_size(total_bytes)}")
+
+
 # ─── Download Runner ──────────────────────────────────────────────────────────
 
-def run_download(cmd: list, progress: Progress, spinner: Spinner, is_audio_only: bool = False) -> int:
+def run_download(cmd: list, progress: Progress, spinner: Spinner, is_audio_only: bool = False) -> tuple[int, str | None]:
     """Spawn yt-dlp; hand off from spinner to progress bar on first output."""
     proc = subprocess.Popen(
         cmd,
@@ -695,6 +883,7 @@ def run_download(cmd: list, progress: Progress, spinner: Spinner, is_audio_only:
     total_streams = 1
     media_streams_seen = 0
     media_download_active = False
+    saved_path = None
 
     for line in proc.stdout:
         line = line.rstrip()
@@ -704,7 +893,7 @@ def run_download(cmd: list, progress: Progress, spinner: Spinner, is_audio_only:
         # Hand off on first recognisable yt-dlp output
         if spinner_live and any(k in line for k in ("[youtube]", "[info]", "[Playlist]", "[download]", "[SponsorBlock]", "[ThumbnailsConvertor]")):
             handoff()
-            progress.set_stage("Fetching video details…", 2.0)
+            progress.set_stage("Preparing download…", 2.0)
 
         # Detect split streams (e.g. 401+251 means separate video and audio downloads)
         m_fmt = re.search(r"Downloading (\d+) format\(s\):\s*([^\s:]+)", line)
@@ -748,6 +937,10 @@ def run_download(cmd: list, progress: Progress, spinner: Spinner, is_audio_only:
             media_download_active = True
             media_streams_seen += 1
 
+            m_dest_path = re.search(r'Destination:\s*["\']?([^"\']+\.(?:mp4|mkv|webm|avi|mp3|wav|flac|m4a|opus))["\']?', line, re.IGNORECASE)
+            if m_dest_path:
+                saved_path = m_dest_path.group(1).strip()
+
             if media_streams_seen >= 2 and total_streams >= 2:
                 progress.set_stage("Downloading audio…", 75.0)
             else:
@@ -760,6 +953,9 @@ def run_download(cmd: list, progress: Progress, spinner: Spinner, is_audio_only:
             handoff()
             media_download_active = True
             media_streams_seen += 1
+            m_already = re.search(r'\[download\]\s*([^:]+\.(?:mp4|mkv|webm|avi|mp3|wav|flac|m4a|opus))\s+has already been downloaded', line, re.IGNORECASE)
+            if m_already:
+                saved_path = m_already.group(1).strip()
             if media_streams_seen == 1 and total_streams >= 2:
                 progress.set_stage("Downloading audio…", 75.0)
             continue
@@ -791,6 +987,18 @@ def run_download(cmd: list, progress: Progress, spinner: Spinner, is_audio_only:
 
         # Post-processing / format conversion stages (ONLY when media_download_active is True!)
         if media_download_active:
+            m_merge = re.search(r'Merging formats into ["\']([^"\']+)["\']', line)
+            if m_merge:
+                saved_path = m_merge.group(1).strip()
+            elif "Moving file" in line:
+                m_move = re.search(r'Moving file .* to ["\']?([^"\']+\.(?:mp4|mkv|webm|avi|mp3|wav|flac|m4a|opus))["\']?', line, re.IGNORECASE)
+                if m_move:
+                    saved_path = m_move.group(1).strip()
+            elif "[ExtractAudio] Destination:" in line:
+                m_ea = re.search(r'Destination:\s*["\']?([^"\']+\.(?:mp4|mkv|webm|avi|mp3|wav|flac|m4a|opus))["\']?', line, re.IGNORECASE)
+                if m_ea:
+                    saved_path = m_ea.group(1).strip()
+
             if any(k in line for k in ("[Merger]", "Merging formats")):
                 handoff()
                 progress.set_stage("Merging video & audio…", 88.0, target_ceiling=93.0)
@@ -830,7 +1038,7 @@ def run_download(cmd: list, progress: Progress, spinner: Spinner, is_audio_only:
     handoff()   # safety: kill spinner even if yt-dlp produced no output
     proc.wait()
     progress.stop_ticker()
-    return proc.returncode
+    return proc.returncode, saved_path
 
 
 # ─── Option Collector ─────────────────────────────────────────────────────────
@@ -925,6 +1133,15 @@ def download_one(url: str, opts: dict, label: str = ""):
     if label:
         print(f"\n{Fore.WHITE}{label}")
 
+    is_playlist = opts.get("playlist", False)
+    spinner_label = "Fetching playlist details" if is_playlist else "Fetching video details"
+    spinner_fetch = Spinner(spinner_label).start()
+    info = fetch_media_info(url, opts)
+    spinner_fetch.stop()
+
+    if info:
+        display_media_info(info, opts)
+
     cmd = build_cmd(url, opts)
 
     if opts.get("show_bg"):
@@ -935,14 +1152,19 @@ def download_one(url: str, opts: dict, label: str = ""):
 
     is_audio_only = opts.get("fmt") in AUDIO_FORMATS
     phases   = build_phases(opts)
-    spinner  = Spinner("Initialising").start()
+    spinner  = Spinner("Starting download").start()
     progress = Progress(phases, opts=opts)
 
-    rc = run_download(cmd, progress, spinner, is_audio_only=is_audio_only)
+    rc, saved_file = run_download(cmd, progress, spinner, is_audio_only=is_audio_only)
 
     if rc == 0:
-        saved = os.path.join(opts["out_dir"], f"{opts['name']}.{opts['fmt'].lower()}")
-        progress.finish(saved)
+        if not saved_file:
+            if opts["name"] == "%(title)s" and info and info.get("title"):
+                safe_title = re.sub(r'[\\/*?:"<>|]', "", info["title"])
+                saved_file = os.path.join(opts["out_dir"], f"{safe_title}.{opts['fmt'].lower()}")
+            else:
+                saved_file = os.path.join(opts["out_dir"], f"{opts['name']}.{opts['fmt'].lower()}")
+        progress.finish(saved_file)
     else:
         progress.stop()
         print(f"\n\n\n{Fore.RED}✗  yt-dlp exited with code {rc}.")
