@@ -262,68 +262,72 @@ class Spinner:
 
 class Progress:
     """
-    3-line block that rewrites itself in place:
+    Dynamic 3-line progress block that rewrites itself in place:
 
-        Stage label…   size  speed  ETA
+        Downloading video…   145.2MiB  12.4MiB/s  ETA 00:03
         ──────────────────────────────────────────────────────
-        [██│████████████████│████│░░│░░░░]   42%
+        [████████████████████░░░░░░░░░░]   68%
 
-    Each │ divider marks a phase boundary.  Segment widths are proportional
-    to the phase weights, so heavier phases get a wider slice of the bar.
+    Guarantees strict forward progression (never jumps backwards), separates
+    multi-stream downloads (video then audio) so percentages don't reset, and
+    provides smooth live progress during post-processing.
     """
 
     BAR_WIDTH = 30
 
-    def __init__(self, phases: list):
-        """
-        phases — ordered list of (key, label, weight)
-          key    : identifier used in update() calls
-          label  : human-readable stage name
-          weight : relative time cost; controls segment width in the bar
-        """
-        self.phases        = phases
-        self._total_weight = sum(w for _, _, w in phases)
-        self._phase_map    = {key: i for i, (key, _, _) in enumerate(phases)}
-        self._active       = False
+    def __init__(self, phases: list = None, opts: dict = None):
+        self.phases = phases or []
+        self.opts = opts or {}
+        self._current_fill = 0.0
+        self._target_ceiling = None
+        self._current_label = "Initialising…"
+        self._current_extra = ""
+        self._active = False
+        self._lock = threading.Lock()
+        self._ticker_stop = threading.Event()
+        self._ticker_thread = None
+        self._start_ticker()
 
-        # Pre-compute character positions where │ dividers are inserted
-        self._dividers: set = set()
-        cumw = 0
-        for key, _, w in phases[:-1]:
-            cumw += w
-            pos = int(self.BAR_WIDTH * cumw / self._total_weight)
-            if 0 < pos < self.BAR_WIDTH:
-                self._dividers.add(pos)
+    def _start_ticker(self):
+        self._ticker_stop.clear()
+        self._ticker_thread = threading.Thread(target=self._ticker_worker, daemon=True)
+        self._ticker_thread.start()
 
-    # ── Internals ─────────────────────────────────────────────────────────────
+    def _ticker_worker(self):
+        while not self._ticker_stop.is_set():
+            time.sleep(0.15)
+            with self._lock:
+                if (
+                    self._target_ceiling is not None
+                    and self._current_fill < self._target_ceiling - 0.1
+                    and self._active
+                ):
+                    self._current_fill = min(self._current_fill + 0.3, self._target_ceiling - 0.1)
+                    self._render_locked()
 
-    def _bar_fill(self, phase_key: str, within: float) -> float:
-        """Overall 0-100 fill for being at `within`% through `phase_key`."""
-        idx    = self._phase_map.get(phase_key, 0)
-        before = sum(self.phases[i][2] for i in range(idx))
-        pw     = self.phases[idx][2]
-        return (before + pw * within / 100.0) / self._total_weight * 100.0
+    def stop_ticker(self):
+        self._target_ceiling = None
+        self._ticker_stop.set()
+        if self._ticker_thread and self._ticker_thread.is_alive():
+            self._ticker_thread.join(timeout=0.3)
 
-    def _draw(self, label: str, fill: float, extra: str = ""):
-        filled  = int(self.BAR_WIDTH * max(0.0, min(fill, 100.0)) / 100)
+    def stop(self):
+        self.stop_ticker()
+
+    def _render_locked(self):
+        clamped = max(0.0, min(self._current_fill, 100.0))
+        filled = int(self.BAR_WIDTH * clamped / 100.0)
         bar_raw = "█" * filled + "░" * (self.BAR_WIDTH - filled)
+        pct = int(clamped)
 
-        # Build bar string with │ at phase boundaries
-        seg = ""
-        for i, ch in enumerate(bar_raw):
-            if i in self._dividers:
-                seg += f"{Fore.WHITE}│{Fore.YELLOW}"
-            seg += ch
-
-        pct        = int(fill)
-        label_line = f"{Fore.WHITE}{label}"
-        if extra:
-            label_line += f"  {Fore.WHITE}{extra}"
-        rule_line  = f"{Fore.WHITE}{'─' * 54}{Style.RESET_ALL}"
-        bar_line   = f"{Fore.WHITE}[{Fore.YELLOW}{seg}{Fore.WHITE}]  {Fore.GREEN}{pct:>3}%"
+        label_line = f"{Fore.WHITE}{self._current_label}"
+        if self._current_extra:
+            label_line += f"  {Fore.WHITE}{self._current_extra}"
+        rule_line = f"{Fore.WHITE}{'─' * 54}{Style.RESET_ALL}"
+        bar_line = f"{Fore.WHITE}[{Fore.YELLOW}{bar_raw}{Fore.WHITE}]  {Fore.GREEN}{pct:>3}%"
 
         if self._active:
-            sys.stdout.write("\033[3A")   # move up 3 lines to overwrite
+            sys.stdout.write("\033[3A")
 
         sys.stdout.write(f"\033[K{label_line}\n")
         sys.stdout.write(f"\033[K{rule_line}\n")
@@ -331,19 +335,68 @@ class Progress:
         sys.stdout.flush()
         self._active = True
 
-    # ── Public API ────────────────────────────────────────────────────────────
+    def set_stage(self, label: str, fill: float, target_ceiling: float = None, extra: str = ""):
+        with self._lock:
+            self._current_fill = max(self._current_fill, fill)
+            self._current_label = label
+            self._current_extra = extra
+            self._target_ceiling = target_ceiling
+            self._render_locked()
+
+    def update_download(self, stream_index: int, total_streams: int, pct: float, extra: str = ""):
+        with self._lock:
+            self._target_ceiling = None
+            pct = max(0.0, min(pct, 100.0))
+            if total_streams >= 2:
+                if stream_index <= 1:
+                    calc = 5.0 + (pct / 100.0) * 70.0
+                    label = "Downloading video…"
+                else:
+                    calc = 75.0 + (pct / 100.0) * 13.0
+                    label = "Downloading audio…"
+            else:
+                calc = 5.0 + (pct / 100.0) * 83.0
+                label = "Downloading…"
+
+            self._current_fill = max(self._current_fill, calc)
+            self._current_label = label
+            self._current_extra = extra
+            self._render_locked()
 
     def update(self, phase_key: str, within: float, extra: str = ""):
-        """Redraw the progress block for `phase_key` at `within`% of that phase."""
-        if phase_key not in self._phase_map:
-            return          # phase was not included for this download — ignore
-        idx   = self._phase_map[phase_key]
-        label = self.phases[idx][1]
-        fill  = self._bar_fill(phase_key, within)
-        self._draw(f"{label}…", fill, extra)
+        """Backward-compatible update method."""
+        if phase_key == "init":
+            self.set_stage("Initialising…", 2.0, extra=extra)
+        elif phase_key == "download":
+            self.set_stage("Downloading…", 5.0 + (within / 100.0) * 83.0, extra=extra)
+        elif phase_key in ("convert", "merge"):
+            self.set_stage("Processing media…", 88.0, target_ceiling=93.0, extra=extra)
+        elif phase_key == "sponsor":
+            self.set_stage("Removing sponsor segments…", 93.0, target_ceiling=96.0, extra=extra)
+        elif phase_key == "chapters":
+            self.set_stage("Splitting chapters…", 95.0, target_ceiling=98.0, extra=extra)
+        elif phase_key == "metadata":
+            self.set_stage("Embedding metadata…", 97.0, target_ceiling=99.0, extra=extra)
 
     def finish(self, saved_path: str = ""):
-        self._draw(f"{Fore.GREEN}✓  Complete!", 100)
+        self.stop_ticker()
+        with self._lock:
+            self._current_fill = 100.0
+            filled = self.BAR_WIDTH
+            bar_raw = "█" * filled
+            label_line = f"{Fore.GREEN}✓  Complete!"
+            rule_line = f"{Fore.WHITE}{'─' * 54}{Style.RESET_ALL}"
+            bar_line = f"{Fore.WHITE}[{Fore.GREEN}{bar_raw}{Fore.WHITE}]  {Fore.GREEN}100%"
+
+            if self._active:
+                sys.stdout.write("\033[3A")
+
+            sys.stdout.write(f"\033[K{label_line}\n")
+            sys.stdout.write(f"\033[K{rule_line}\n")
+            sys.stdout.write(f"\033[K{bar_line}\n")
+            sys.stdout.flush()
+            self._active = True
+
         if saved_path:
             print(f"\n{Fore.GREEN}✓  Saved → {Fore.WHITE}{saved_path}")
         else:
@@ -638,15 +691,49 @@ def run_download(cmd: list, progress: Progress, spinner: Spinner) -> int:
             spinner.stop()
             spinner_live = False
 
+    total_streams = 1
+    current_stream = 1
+    stream_1_finished = False
+    download_started = False
+
     for line in proc.stdout:
         line = line.rstrip()
+        if not line:
+            continue
 
-        # First recognisable yt-dlp output → kill spinner, show init phase
-        if spinner_live and any(k in line for k in ("[youtube]", "[info]", "[Playlist]", "[download]")):
+        # Hand off on first recognisable yt-dlp output
+        if spinner_live and any(k in line for k in ("[youtube]", "[info]", "[Playlist]", "[download]", "[SponsorBlock]")):
             handoff()
-            progress.update("init", 80)
+            progress.set_stage("Fetching video details…", 2.0)
 
-        # Download percentage
+        # Detect split streams (e.g. 401+251 means separate video and audio downloads)
+        m_fmt = re.search(r"Downloading (\d+) format\(s\):\s*([^\s:]+)", line)
+        if m_fmt:
+            formats_spec = m_fmt.group(2)
+            total_streams = 2 if "+" in formats_spec else 1
+
+        # Destination lines
+        if "Destination:" in line:
+            dest_lower = line.lower()
+            if any(ext in dest_lower for ext in (".vtt", ".srt", ".ttml", ".srv3")):
+                progress.set_stage("Downloading subtitles…", 3.0)
+                continue
+            if any(ext in dest_lower for ext in (".jpg", ".jpeg", ".png", ".webp")) and not any(k in dest_lower for k in (".mp4", ".mkv", ".webm")):
+                progress.set_stage("Downloading thumbnail…", 4.0)
+                continue
+
+            # Media stream destination
+            download_started = True
+            if stream_1_finished and total_streams >= 2:
+                current_stream = 2
+                progress.set_stage("Downloading audio…", 75.0)
+            else:
+                current_stream = 1
+                label = "Downloading video…" if total_streams >= 2 else "Downloading…"
+                progress.set_stage(label, 5.0)
+            continue
+
+        # Download percentage tracking
         if "[download]" in line and "%" in line:
             m = re.search(
                 r"(\d+\.?\d*)%"
@@ -656,35 +743,70 @@ def run_download(cmd: list, progress: Progress, spinner: Spinner) -> int:
                 line,
             )
             if m:
+                handoff()
+                download_started = True
                 pct       = float(m.group(1))
                 size_str  = m.group(2) or ""
                 speed_str = m.group(3) or ""
                 eta_str   = f"ETA {m.group(4)}" if m.group(4) else ""
                 extra     = "  ".join(filter(None, [size_str, speed_str, eta_str]))
-                progress.update("download", pct, extra)
 
-        elif any(k in line for k in ("ExtractAudio", "[ffmpeg]", "Converting")):
-            handoff()
-            progress.update("convert", 50)
+                # If stream 1 completed, subsequent download progress belongs to stream 2
+                if total_streams >= 2:
+                    if current_stream == 1:
+                        if pct >= 99.9 or "100% of" in line:
+                            stream_1_finished = True
+                        elif stream_1_finished:
+                            current_stream = 2
+                    if stream_1_finished and pct < 90.0:
+                        current_stream = 2
 
-        elif any(k in line for k in ("Merging", "Merger")):
+                progress.update_download(current_stream, total_streams, pct, extra)
+                continue
+
+        # Post-processing / format conversion stages
+        if any(k in line for k in ("[Merger]", "Merging formats")):
             handoff()
-            progress.update("merge", 50)
+            progress.set_stage("Merging video & audio…", 88.0, target_ceiling=93.0)
+
+        elif any(k in line for k in ("[ExtractAudio]", "ExtractAudio")):
+            handoff()
+            progress.set_stage("Converting audio format…", 88.0, target_ceiling=94.0)
 
         elif "[SponsorBlock]" in line:
             handoff()
-            progress.update("sponsor", 50)
+            if download_started:
+                progress.set_stage("Removing sponsor segments…", 93.0, target_ceiling=96.0)
+            else:
+                progress.set_stage("Checking SponsorBlock…", 4.0)
 
-        elif "SplitChapters" in line:
+        elif any(k in line for k in ("[SplitChapters]", "SplitChapters")):
             handoff()
-            progress.update("chapters", 50)
+            progress.set_stage("Splitting into chapters…", 95.0, target_ceiling=98.0)
 
-        elif any(k in line for k in ("Metadata", "EmbedThumbnail", "Thumbnail")):
+        elif any(k in line for k in ("[Metadata]", "Adding metadata", "[EmbedThumbnail]", "[ThumbnailsConvertor]")):
             handoff()
-            progress.update("metadata", 50)
+            progress.set_stage("Embedding metadata & thumbnail…", 97.0, target_ceiling=99.0)
+
+        elif any(k in line for k in ("[MoveFiles]", "Moving file")):
+            handoff()
+            progress.set_stage("Finalizing output file…", 99.0)
+
+        elif "[ffmpeg]" in line:
+            handoff()
+            lower = line.lower()
+            if "merging" in lower:
+                progress.set_stage("Merging video & audio…", 88.0, target_ceiling=93.0)
+            elif "converting" in lower or "extract" in lower:
+                progress.set_stage("Converting audio format…", 88.0, target_ceiling=94.0)
+            elif "segment" in lower or "sponsor" in lower:
+                progress.set_stage("Removing sponsor segments…", 93.0, target_ceiling=96.0)
+            elif "thumbnail" in lower:
+                progress.set_stage("Embedding metadata & thumbnail…", 97.0, target_ceiling=99.0)
 
     handoff()   # safety: kill spinner even if yt-dlp produced no output
     proc.wait()
+    progress.stop_ticker()
     return proc.returncode
 
 
@@ -790,7 +912,7 @@ def download_one(url: str, opts: dict, label: str = ""):
 
     phases   = build_phases(opts)
     spinner  = Spinner("Initialising").start()
-    progress = Progress(phases)
+    progress = Progress(phases, opts=opts)
 
     rc = run_download(cmd, progress, spinner)
 
@@ -798,6 +920,7 @@ def download_one(url: str, opts: dict, label: str = ""):
         saved = os.path.join(opts["out_dir"], f"{opts['name']}.{opts['fmt'].lower()}")
         progress.finish(saved)
     else:
+        progress.stop()
         print(f"\n\n\n{Fore.RED}✗  yt-dlp exited with code {rc}.")
         print(f"   {Fore.YELLOW}Re-run with 'Show raw yt-dlp output = yes' for details.")
 
