@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-AS Youtube Downloader — based on yt-dlp — version 1.6.2
+AS Youtube Downloader — based on yt-dlp — version 1.6.3
 """
 
 import subprocess
@@ -18,7 +18,7 @@ init(autoreset=True)
 
 # ─── Constants ────────────────────────────────────────────────────────────────
 
-VERSION       = "1.6.2"
+VERSION       = "1.6.3"
 DEFAULT_DIR   = str(Path.home() / "Downloads")
 
 AUDIO_FORMATS = ["MP3", "WAV", "FLAC", "M4A", "OPUS"]
@@ -337,13 +337,14 @@ class Progress:
 
     def set_stage(self, label: str, fill: float, target_ceiling: float = None, extra: str = ""):
         with self._lock:
+            fill = min(fill, 99.0)
             self._current_fill = max(self._current_fill, fill)
             self._current_label = label
             self._current_extra = extra
             self._target_ceiling = target_ceiling
             self._render_locked()
 
-    def update_download(self, stream_index: int, total_streams: int, pct: float, extra: str = ""):
+    def update_download(self, stream_index: int, total_streams: int, pct: float, extra: str = "", is_audio_only: bool = False):
         with self._lock:
             self._target_ceiling = None
             pct = max(0.0, min(pct, 100.0))
@@ -356,7 +357,7 @@ class Progress:
                     label = "Downloading audio…"
             else:
                 calc = 5.0 + (pct / 100.0) * 83.0
-                label = "Downloading…"
+                label = "Downloading audio…" if is_audio_only else "Downloading…"
 
             self._current_fill = max(self._current_fill, calc)
             self._current_label = label
@@ -672,7 +673,7 @@ def build_cmd(url: str, opts: dict) -> list:
 
 # ─── Download Runner ──────────────────────────────────────────────────────────
 
-def run_download(cmd: list, progress: Progress, spinner: Spinner) -> int:
+def run_download(cmd: list, progress: Progress, spinner: Spinner, is_audio_only: bool = False) -> int:
     """Spawn yt-dlp; hand off from spinner to progress bar on first output."""
     proc = subprocess.Popen(
         cmd,
@@ -692,9 +693,8 @@ def run_download(cmd: list, progress: Progress, spinner: Spinner) -> int:
             spinner_live = False
 
     total_streams = 1
-    current_stream = 1
-    stream_1_finished = False
-    download_started = False
+    media_streams_seen = 0
+    media_download_active = False
 
     for line in proc.stdout:
         line = line.rstrip()
@@ -702,7 +702,7 @@ def run_download(cmd: list, progress: Progress, spinner: Spinner) -> int:
             continue
 
         # Hand off on first recognisable yt-dlp output
-        if spinner_live and any(k in line for k in ("[youtube]", "[info]", "[Playlist]", "[download]", "[SponsorBlock]")):
+        if spinner_live and any(k in line for k in ("[youtube]", "[info]", "[Playlist]", "[download]", "[SponsorBlock]", "[ThumbnailsConvertor]")):
             handoff()
             progress.set_stage("Fetching video details…", 2.0)
 
@@ -712,25 +712,56 @@ def run_download(cmd: list, progress: Progress, spinner: Spinner) -> int:
             formats_spec = m_fmt.group(2)
             total_streams = 2 if "+" in formats_spec else 1
 
+        # Check for pre-download activities (subtitles, thumbnails, SponsorBlock checks)
+        if not media_download_active:
+            if "Downloading subtitles" in line or "Writing video subtitles" in line:
+                handoff()
+                progress.set_stage("Downloading subtitles…", 3.0)
+                continue
+            if "Downloading video thumbnail" in line or "Writing video thumbnail" in line:
+                handoff()
+                progress.set_stage("Downloading thumbnail…", 4.0)
+                continue
+            if "[ThumbnailsConvertor]" in line:
+                handoff()
+                progress.set_stage("Processing thumbnail…", 4.5)
+                continue
+            if "[SponsorBlock]" in line:
+                handoff()
+                progress.set_stage("Checking SponsorBlock…", 4.5)
+                continue
+
         # Destination lines
         if "Destination:" in line:
             dest_lower = line.lower()
             if any(ext in dest_lower for ext in (".vtt", ".srt", ".ttml", ".srv3")):
+                handoff()
                 progress.set_stage("Downloading subtitles…", 3.0)
                 continue
             if any(ext in dest_lower for ext in (".jpg", ".jpeg", ".png", ".webp")) and not any(k in dest_lower for k in (".mp4", ".mkv", ".webm")):
+                handoff()
                 progress.set_stage("Downloading thumbnail…", 4.0)
                 continue
 
             # Media stream destination
-            download_started = True
-            if stream_1_finished and total_streams >= 2:
-                current_stream = 2
+            handoff()
+            media_download_active = True
+            media_streams_seen += 1
+
+            if media_streams_seen >= 2 and total_streams >= 2:
                 progress.set_stage("Downloading audio…", 75.0)
             else:
-                current_stream = 1
-                label = "Downloading video…" if total_streams >= 2 else "Downloading…"
+                label = "Downloading audio…" if is_audio_only else ("Downloading video…" if total_streams >= 2 else "Downloading…")
                 progress.set_stage(label, 5.0)
+            continue
+
+        # Already downloaded / resumed media stream
+        if "has already been downloaded" in line:
+            handoff()
+            media_download_active = True
+            media_streams_seen += 1
+            if media_streams_seen == 1 and total_streams >= 2:
+                progress.set_stage("Downloading audio…", 75.0)
             continue
 
         # Download percentage tracking
@@ -744,65 +775,57 @@ def run_download(cmd: list, progress: Progress, spinner: Spinner) -> int:
             )
             if m:
                 handoff()
-                download_started = True
+                if not media_download_active:
+                    media_download_active = True
+                    media_streams_seen = 1
+
                 pct       = float(m.group(1))
                 size_str  = m.group(2) or ""
                 speed_str = m.group(3) or ""
                 eta_str   = f"ETA {m.group(4)}" if m.group(4) else ""
                 extra     = "  ".join(filter(None, [size_str, speed_str, eta_str]))
 
-                # If stream 1 completed, subsequent download progress belongs to stream 2
-                if total_streams >= 2:
-                    if current_stream == 1:
-                        if pct >= 99.9 or "100% of" in line:
-                            stream_1_finished = True
-                        elif stream_1_finished:
-                            current_stream = 2
-                    if stream_1_finished and pct < 90.0:
-                        current_stream = 2
-
-                progress.update_download(current_stream, total_streams, pct, extra)
+                current_stream = 2 if (media_streams_seen >= 2 and total_streams >= 2) else 1
+                progress.update_download(current_stream, total_streams, pct, extra, is_audio_only=is_audio_only)
                 continue
 
-        # Post-processing / format conversion stages
-        if any(k in line for k in ("[Merger]", "Merging formats")):
-            handoff()
-            progress.set_stage("Merging video & audio…", 88.0, target_ceiling=93.0)
-
-        elif any(k in line for k in ("[ExtractAudio]", "ExtractAudio")):
-            handoff()
-            progress.set_stage("Converting audio format…", 88.0, target_ceiling=94.0)
-
-        elif "[SponsorBlock]" in line:
-            handoff()
-            if download_started:
-                progress.set_stage("Removing sponsor segments…", 93.0, target_ceiling=96.0)
-            else:
-                progress.set_stage("Checking SponsorBlock…", 4.0)
-
-        elif any(k in line for k in ("[SplitChapters]", "SplitChapters")):
-            handoff()
-            progress.set_stage("Splitting into chapters…", 95.0, target_ceiling=98.0)
-
-        elif any(k in line for k in ("[Metadata]", "Adding metadata", "[EmbedThumbnail]", "[ThumbnailsConvertor]")):
-            handoff()
-            progress.set_stage("Embedding metadata & thumbnail…", 97.0, target_ceiling=99.0)
-
-        elif any(k in line for k in ("[MoveFiles]", "Moving file")):
-            handoff()
-            progress.set_stage("Finalizing output file…", 99.0)
-
-        elif "[ffmpeg]" in line:
-            handoff()
-            lower = line.lower()
-            if "merging" in lower:
+        # Post-processing / format conversion stages (ONLY when media_download_active is True!)
+        if media_download_active:
+            if any(k in line for k in ("[Merger]", "Merging formats")):
+                handoff()
                 progress.set_stage("Merging video & audio…", 88.0, target_ceiling=93.0)
-            elif "converting" in lower or "extract" in lower:
+
+            elif any(k in line for k in ("[ExtractAudio]", "ExtractAudio")):
+                handoff()
                 progress.set_stage("Converting audio format…", 88.0, target_ceiling=94.0)
-            elif "segment" in lower or "sponsor" in lower:
+
+            elif "[SponsorBlock]" in line:
+                handoff()
                 progress.set_stage("Removing sponsor segments…", 93.0, target_ceiling=96.0)
-            elif "thumbnail" in lower:
-                progress.set_stage("Embedding metadata & thumbnail…", 97.0, target_ceiling=99.0)
+
+            elif any(k in line for k in ("[SplitChapters]", "SplitChapters")):
+                handoff()
+                progress.set_stage("Splitting into chapters…", 95.0, target_ceiling=98.0)
+
+            elif any(k in line for k in ("[Metadata]", "Adding metadata", "[EmbedThumbnail]")):
+                handoff()
+                progress.set_stage("Embedding metadata & thumbnail…", 96.0, target_ceiling=99.0)
+
+            elif any(k in line for k in ("[MoveFiles]", "Moving file")):
+                handoff()
+                progress.set_stage("Finalizing output file…", 99.0)
+
+            elif "[ffmpeg]" in line:
+                handoff()
+                lower = line.lower()
+                if "merging" in lower:
+                    progress.set_stage("Merging video & audio…", 88.0, target_ceiling=93.0)
+                elif "converting" in lower or "extract" in lower:
+                    progress.set_stage("Converting audio format…", 88.0, target_ceiling=94.0)
+                elif "segment" in lower or "sponsor" in lower:
+                    progress.set_stage("Removing sponsor segments…", 93.0, target_ceiling=96.0)
+                elif "thumbnail" in lower or "metadata" in lower:
+                    progress.set_stage("Embedding metadata & thumbnail…", 96.0, target_ceiling=99.0)
 
     handoff()   # safety: kill spinner even if yt-dlp produced no output
     proc.wait()
@@ -910,11 +933,12 @@ def download_one(url: str, opts: dict, label: str = ""):
             print(f"{Fore.RED}✗  yt-dlp exited with code {result.returncode}.")
         return
 
+    is_audio_only = opts.get("fmt") in AUDIO_FORMATS
     phases   = build_phases(opts)
     spinner  = Spinner("Initialising").start()
     progress = Progress(phases, opts=opts)
 
-    rc = run_download(cmd, progress, spinner)
+    rc = run_download(cmd, progress, spinner, is_audio_only=is_audio_only)
 
     if rc == 0:
         saved = os.path.join(opts["out_dir"], f"{opts['name']}.{opts['fmt'].lower()}")
