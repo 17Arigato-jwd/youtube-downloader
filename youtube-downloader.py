@@ -96,7 +96,7 @@ def check_deps():
     missing = [t for t in ("yt-dlp", "ffmpeg") if shutil.which(t) is None]
     if missing:
         print(f"{Fore.RED}✗  Missing dependencies: {', '.join(missing)}")
-        print(f"{Fore.YELLOW}   Install: pip install yt-dlp  |  https://ffmpeg.org/download.html")
+        print(f"{Fore.YELLOW}   Install: pip install 'yt-dlp[default,curl-cffi]'  |  https://ffmpeg.org/download.html")
         sys.exit(1)
 
 
@@ -464,7 +464,7 @@ def update_ytdlp(timeout: int = 15):
             if "pip install" in output.lower() and ("installed via pip" in output.lower() or "use:" in output.lower()):
                 result["label"] = "Updating yt-dlp via pip…"
                 result["fill"] = 75.0
-                pip_cmd = [sys.executable, "-m", "pip", "install", "--upgrade", "yt-dlp"]
+                pip_cmd = [sys.executable, "-m", "pip", "install", "--upgrade", "yt-dlp[default,curl-cffi]"]
                 p_proc = subprocess.run(
                     pip_cmd,
                     stdout=subprocess.PIPE,
@@ -569,7 +569,7 @@ def build_cmd(url: str, opts: dict) -> list:
     is_audio = opts["fmt"] in AUDIO_FORMATS
     out_tpl  = os.path.join(opts["out_dir"], f"{opts['name']}.%(ext)s")
 
-    cmd = ["yt-dlp", url, "-o", out_tpl, "--newline", "--continue"]
+    cmd = ["yt-dlp", url, "-o", out_tpl, "--newline", "--continue", "--ignore-errors"]
 
     # Resolve JS runtime explicitly so yt-dlp can solve YouTube's n-challenge
     # even inside sandboxed environments (Flatpak, venv) where PATH is stripped.
