@@ -9,11 +9,12 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/17Arigato-jwd/youtube-downloader/releases"><img src="https://img.shields.io/badge/version-1.6.4-blue.svg?style=flat-square" alt="Version 1.6.4" /></a>
+  <a href="https://github.com/17Arigato-jwd/youtube-downloader/releases"><img src="https://img.shields.io/badge/release-v1.6.4-blue.svg?style=flat-square" alt="Release v1.6.4" /></a>
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.10+-3776AB.svg?style=flat-square&logo=python&logoColor=white" alt="Python 3.10+" /></a>
   <a href="https://github.com/yt-dlp/yt-dlp"><img src="https://img.shields.io/badge/powered%20by-yt--dlp-red.svg?style=flat-square" alt="Powered by yt-dlp" /></a>
   <a href="https://ffmpeg.org/"><img src="https://img.shields.io/badge/media%20engine-FFmpeg-007808.svg?style=flat-square&logo=ffmpeg&logoColor=white" alt="FFmpeg" /></a>
-  <img src="https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey.svg?style=flat-square" alt="Platform: Linux | macOS | Windows" />
+  <img src="https://img.shields.io/badge/command-yt--dnld-orange.svg?style=flat-square" alt="Command: yt-dnld" />
+  <img src="https://img.shields.io/badge/platform-Linux%20%7C%20Windows%20%7C%20macOS%20%7C%20Android%20%7C%20iOS-lightgrey.svg?style=flat-square" alt="Platform: Linux | Windows | macOS | Android | iOS" />
 </p>
 
 ---
@@ -21,11 +22,22 @@
 ## 📖 Table of Contents
 
 - [Overview](#-overview)
+- [Supported Platforms & Devices](#-supported-platforms--devices)
 - [Key Features](#-key-features)
 - [Terminal Preview](#-terminal-preview)
-- [Prerequisites](#-prerequisites)
-- [Installation](#-installation)
-- [Quick Start](#-quick-start)
+- [Releases & Automated Installers (Windows, Linux, macOS)](#-releases--automated-installers)
+  - [🪟 Windows Setup (Release)](#-windows-setup-release)
+  - [🐧 Linux Setup (Release)](#-linux-setup-release)
+  - [🍎 macOS Setup (Release)](#-macos-setup-release)
+- [Manual Setup for Other Devices & Operating Systems](#-manual-setup-for-other-devices--operating-systems)
+  - [😈 BSD Systems (FreeBSD, OpenBSD, NetBSD, GhostBSD)](#-bsd-systems-freebsd-openbsd-netbsd-ghostbsd)
+  - [📱 Android (Termux)](#-android-termux)
+  - [🍏 iOS / iPadOS (iSH / a-Shell)](#-ios--ipados-ish--a-shell)
+  - [🍓 Raspberry Pi & Other SBCs](#-raspberry-pi--other-sbcs)
+  - [🎮 Steam Deck & Handheld Gaming PCs (SteamOS / Bazzite)](#-steam-deck--handheld-gaming-pcs-steamos--bazzite)
+  - [💻 ChromeOS (Linux Container / Crostini)](#-chromeos-linux-container--crostini)
+  - [🪟 Windows Subsystem for Linux (WSL / WSL2)](#-windows-subsystem-for-linux-wsl--wsl2)
+- [Quick Start (`yt-dnld`)](#-quick-start-yt-dnld)
 - [Interactive Guide & Options](#-interactive-guide--options)
   - [Format & Quality Presets](#format--quality-presets)
   - [Batch & Playlist Support](#batch--playlist-support)
@@ -34,6 +46,7 @@
 - [Command-Line Flags](#-command-line-flags)
 - [How It Works](#-how-it-works)
 - [Troubleshooting](#-troubleshooting)
+- [Uninstallation](#-uninstallation)
 
 ---
 
@@ -45,6 +58,27 @@
 - **Automated JavaScript Runtime Discovery**: Solves YouTube's throttling `n-challenge` signature deciphering by auto-detecting Node.js or Deno across common paths, version managers (`nvm`, `fnm`), and sandboxed environments.
 - **Dynamic Monotonic Progress Tracking**: An in-place 3-line terminal progress bar that tracks video download, audio download, and FFmpeg post-processing stages without ever resetting backwards.
 - **Pre-Download Media Inspection**: Queries and displays complete video and stream metadata (resolution, frame rate, audio bitrates, estimated file size) before initiating the download.
+- **Global `yt-dnld` Command**: Once installed, call `yt-dnld` from any terminal session, or launch the app from your Desktop or system application menu.
+
+---
+
+## 📱 Supported Platforms & Environments
+
+AS YouTube Downloader is pure Python and relies only on standard ANSI escape sequences and `ffmpeg`. It runs across virtually any POSIX or Windows environment:
+
+| Platform / Operating System | Target Environments & Distros | Setup Method | Command & Integration |
+| :--- | :--- | :--- | :--- |
+| **🪟 Windows** | Windows 10 & 11 (x86_64, ARM64), Windows Server, WSL 1/2 | Pre-built Release / Installer | `yt-dnld` + Start Menu & Desktop Shortcuts |
+| **🐧 Linux** | Ubuntu, Debian, Arch Linux, Fedora, openSUSE, Alpine, Void, NixOS, Pop!_OS, Mint | Pre-built Release / Installer | `yt-dnld` + `.desktop` & App Menu Launcher |
+| **🍎 macOS** | Apple Silicon (M1–M4) & Intel x86_64 (macOS 10.15 Catalina through macOS 15 Sequoia) | Pre-built Release / Installer | `yt-dnld` + Native `.app` & Desktop Launcher |
+| **😈 BSD Family** | **FreeBSD**, **OpenBSD**, **NetBSD**, **DragonFly BSD**, **GhostBSD**, **NomadBSD** | Manual Setup (Package Manager) | `yt-dnld` in terminal shell |
+| **📱 Android** | [Termux](https://termux.dev/) (arm64, arm, x86_64), UserLAnd, AndroNix | Manual Setup | `yt-dnld` via symlink in `$PREFIX/bin` |
+| **🍏 iOS / iPadOS** | [iSH Shell](https://ish.app/) (Alpine Linux emulation) or [a-Shell](https://github.com/holzschu/a-shell) | Manual Setup | `yt-dnld` in local iOS terminal |
+| **🎮 Gaming Handhelds** | Steam Deck (**SteamOS** Desktop Mode), ASUS ROG Ally, Legion Go, **Bazzite** | Release / Manual Setup | `yt-dnld` |
+| **💻 ChromeOS** | Chromebooks via **Crostini Linux Container** | Manual Setup | `yt-dnld` + Application Menu Icon |
+| **🍓 SBCs & ARM / RISC-V** | **Raspberry Pi** (Pi 1–5, Zero / Zero 2 W), Orange Pi, Pine64, RISC-V (VisionFive, Milk-V) | Linux Installer / Manual Setup | `yt-dnld` |
+| **☀️ illumos / Solaris** | OpenIndiana, OmniOS, SmartOS | Manual Setup (`pkgsrc`) | `yt-dnld` |
+| **🌿 Haiku OS** | Haiku x86_64 via HaikuDepot Python 3 + FFmpeg | Manual Setup | `yt-dnld` |
 
 ---
 
@@ -122,81 +156,229 @@ Downloading video…   48.2MiB  15.1MiB/s  ETA 00:01
 
 ---
 
-## 📋 Prerequisites
+## ⚡ Releases & Automated Installers
 
-Before running the downloader, ensure you have:
+Pre-built standalone releases and installer packages for **Windows**, **Linux**, and **macOS** are automatically built and published via GitHub Actions. These packages bundle standalone binaries so you don't even need Python or build tools pre-installed on your system.
 
-1. **Python 3.10+**: Available on your system `PATH`.
-2. **FFmpeg**: Required for remuxing streams, audio format conversion, thumbnail embedding, and chapter slicing.
-3. **yt-dlp**: Required core media extractor (installs via pip).
-4. **JavaScript Runtime (Recommended)**: Node.js or Deno for resolving YouTube player challenge codes without speed degradation.
-
-### Installing FFmpeg
-
-- **Ubuntu / Debian / Mint**:
-  ```bash
-  sudo apt update && sudo apt install -y ffmpeg
-  ```
-- **Arch Linux / Manjaro**:
-  ```bash
-  sudo pacman -S ffmpeg
-  ```
-- **Fedora / RHEL**:
-  ```bash
-  sudo dnf install ffmpeg
-  ```
-- **macOS (Homebrew)**:
-  ```bash
-  brew install ffmpeg
-  ```
-- **Windows (Winget / Scoop)**:
-  ```powershell
-  winget install Gyan.FFmpeg
-  # or
-  scoop install ffmpeg
-  ```
+👉 **[Download the latest release for your OS from GitHub Releases](https://github.com/17Arigato-jwd/youtube-downloader/releases)**
 
 ---
 
-## 📥 Installation
+### 🪟 Windows Setup (Release)
 
-1. **Clone the repository**:
+1. Download **`yt-dnld-windows-x64.zip`** from [Releases](https://github.com/17Arigato-jwd/youtube-downloader/releases).
+2. Extract the ZIP archive.
+3. Right-click **`install.ps1`** and choose **"Run with PowerShell"** (or run `.\install.ps1` in PowerShell).
+
+**What the installer does on Windows:**
+- Installs `yt-dnld.exe` into `%LOCALAPPDATA%\Programs\youtube-downloader`.
+- Adds the folder to your **User PATH** in the Windows Registry so you can type `yt-dnld` from any Command Prompt or PowerShell window.
+- Creates **Start Menu** and **Desktop** shortcuts titled **"AS YouTube Downloader"**.
+
+*(Alternatively, you can run `yt-dnld.exe` directly as a standalone portable executable).*
+
+---
+
+### 🐧 Linux Setup (Release)
+
+1. Download **`yt-dnld-linux-x86_64.tar.gz`** from [Releases](https://github.com/17Arigato-jwd/youtube-downloader/releases).
+2. Extract and run the installer:
+   ```bash
+   tar -xzf yt-dnld-linux-x86_64.tar.gz
+   ./install.sh
+   ```
+
+**What the installer does on Linux:**
+- Installs the standalone executable to `~/.local/bin/yt-dnld` (available in any terminal).
+- Installs the SVG icon and `.desktop` launcher to `~/.local/share/applications` so it appears in your system application menu.
+
+---
+
+### 🍎 macOS Setup (Release)
+
+1. Download **`yt-dnld-macos-universal.zip`** from [Releases](https://github.com/17Arigato-jwd/youtube-downloader/releases).
+2. Extract the archive and double-click **`install.command`** (or execute `./install.command` in Terminal).
+
+**What the installer does on macOS:**
+- Installs `yt-dnld` to `~/.local/bin/yt-dnld` (and `/usr/local/bin`).
+- Compiles a native macOS application bundle in **`~/Applications/AS YouTube Downloader.app`** launchable via Spotlight, Launchpad, or Finder.
+
+---
+
+## 📱 Manual Setup for Other Devices & Operating Systems
+
+For BSD, Android, iOS, handhelds, or environments without pre-packaged releases, setup requires only Python 3.10+, FFmpeg, and a quick clone:
+
+---
+
+### 😈 BSD Systems (FreeBSD, OpenBSD, NetBSD, GhostBSD)
+
+#### FreeBSD / GhostBSD:
+```bash
+# 1. Install prerequisites
+sudo pkg install python3 ffmpeg py311-pip git
+
+# 2. Clone and install dependencies
+git clone https://github.com/17Arigato-jwd/youtube-downloader.git
+cd youtube-downloader
+pip install -r requirements.txt
+
+# 3. Create global command
+mkdir -p ~/.local/bin
+ln -sf "$PWD/youtube-downloader.py" ~/.local/bin/yt-dnld
+chmod +x ~/.local/bin/yt-dnld
+```
+
+#### OpenBSD:
+```bash
+# 1. Install prerequisites
+doas pkg_add python3 ffmpeg py3-pip git
+
+# 2. Clone and setup
+git clone https://github.com/17Arigato-jwd/youtube-downloader.git
+cd youtube-downloader
+pip install --user -r requirements.txt
+mkdir -p ~/.local/bin
+ln -sf "$PWD/youtube-downloader.py" ~/.local/bin/yt-dnld
+chmod +x ~/.local/bin/yt-dnld
+```
+
+#### NetBSD:
+```bash
+sudo pkgin install python311 ffmpeg git
+# Follow standard pip install and symlink above
+```
+
+---
+
+### 📱 Android (Termux)
+
+1. Install **Termux** (recommended from [F-Droid](https://f-droid.org/en/packages/com.termux/)).
+2. Open Termux and install the dependencies:
+   ```bash
+   pkg update && pkg install -y python ffmpeg git
+   ```
+3. Clone the repo and install dependencies:
    ```bash
    git clone https://github.com/17Arigato-jwd/youtube-downloader.git
    cd youtube-downloader
-   ```
-
-2. **(Optional) Set up a virtual environment**:
-   ```bash
-   python3 -m venv .venv
-   source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-   ```
-
-3. **Install Python dependencies**:
-   ```bash
    pip install -r requirements.txt
-   # or install directly:
-   pip install colorama "yt-dlp[default,curl-cffi]"
    ```
-   > [!TIP]
-   > The `curl-cffi` extra provides TLS impersonation to bypass YouTube bot detection algorithms and prevent download throttling.
-
-4. **Make the script executable** (Linux / macOS):
+4. Create the global `yt-dnld` command in Termux:
    ```bash
-   chmod +x youtube-downloader.py
+   ln -sf "$PWD/youtube-downloader.py" "$PREFIX/bin/yt-dnld"
+   chmod +x "$PREFIX/bin/yt-dnld"
+   ```
+5. Run it anytime by typing:
+   ```bash
+   yt-dnld
+   ```
+
+> [!TIP]
+> Run `termux-setup-storage` if you wish to set your output directory to your device's shared internal storage (e.g. `/sdcard/Download`).
+
+---
+
+### 🍏 iOS / iPadOS (iSH / a-Shell)
+
+#### Using iSH (Alpine Linux shell on iOS):
+1. Install [iSH Shell](https://apps.apple.com/app/ish-shell/id1436902243) from the App Store.
+2. Install dependencies:
+   ```bash
+   apk update && apk add python3 py3-pip ffmpeg git bash
+   ```
+3. Clone and install:
+   ```bash
+   git clone https://github.com/17Arigato-jwd/youtube-downloader.git
+   cd youtube-downloader
+   pip install -r requirements.txt
+   ln -sf "$PWD/youtube-downloader.py" /usr/local/bin/yt-dnld
+   chmod +x /usr/local/bin/yt-dnld
+   ```
+4. Run `yt-dnld`.
+
+#### Using a-Shell:
+1. Install [a-Shell](https://apps.apple.com/app/a-shell/id1473805438) from the App Store.
+2. Run:
+   ```bash
+   git clone https://github.com/17Arigato-jwd/youtube-downloader.git
+   cd youtube-downloader
+   pip install -r requirements.txt
+   python3 youtube-downloader.py
    ```
 
 ---
 
-## 🚀 Quick Start
+### 🍓 Raspberry Pi & Other SBCs
 
-Run the application:
+Any Raspberry Pi (running Raspberry Pi OS, DietPi, Ubuntu, or Armbian) or ARM/RISC-V single-board computer can run:
+```bash
+sudo apt update && sudo apt install -y python3 python3-pip ffmpeg git
+git clone https://github.com/17Arigato-jwd/youtube-downloader.git
+cd youtube-downloader
+pip install -r requirements.txt
+mkdir -p ~/.local/bin && ln -sf "$PWD/youtube-downloader.py" ~/.local/bin/yt-dnld
+chmod +x ~/.local/bin/yt-dnld
+```
+
+---
+
+### 🎮 Steam Deck & Handheld Gaming PCs (SteamOS / Bazzite)
+
+1. Switch to **Desktop Mode** on your Steam Deck (or boot into your desktop session).
+2. Open **Konsole** (Terminal) and run:
+   ```bash
+   git clone https://github.com/17Arigato-jwd/youtube-downloader.git
+   cd youtube-downloader
+   python3 -m pip install --user -r requirements.txt
+   mkdir -p ~/.local/bin && ln -sf "$PWD/youtube-downloader.py" ~/.local/bin/yt-dnld
+   chmod +x ~/.local/bin/yt-dnld
+   ```
+3. Type `yt-dnld` in Konsole or add it as a Non-Steam Game to launch in Gaming Mode!
+
+---
+
+### 💻 ChromeOS (Linux Container / Crostini)
+
+1. Enable **Linux (Beta / Crostini)** in your Chromebook's Settings.
+2. Open the **Terminal** app and run:
+   ```bash
+   sudo apt update && sudo apt install -y python3 python3-pip ffmpeg git
+   git clone https://github.com/17Arigato-jwd/youtube-downloader.git
+   cd youtube-downloader
+   pip install -r requirements.txt
+   mkdir -p ~/.local/bin && ln -sf "$PWD/youtube-downloader.py" ~/.local/bin/yt-dnld
+   chmod +x ~/.local/bin/yt-dnld
+   ```
+
+---
+
+### 🪟 Windows Subsystem for Linux (WSL / WSL2)
+
+Open your WSL terminal (Ubuntu, Debian, Arch, or Fedora on WSL) and run:
+```bash
+sudo apt update && sudo apt install -y python3 python3-pip ffmpeg git
+git clone https://github.com/17Arigato-jwd/youtube-downloader.git
+cd youtube-downloader
+pip install -r requirements.txt
+mkdir -p ~/.local/bin && ln -sf "$PWD/youtube-downloader.py" ~/.local/bin/yt-dnld
+chmod +x ~/.local/bin/yt-dnld
+```
+Downloads can save directly into your Windows user directory via `/mnt/c/Users/<YourUser>/Downloads`.
+
+---
+
+## 🚀 Quick Start (`yt-dnld`)
+
+After running the installer for your platform, simply open any terminal and type:
+
+```bash
+yt-dnld
+```
+
+Alternatively, you can run the script directly:
 ```bash
 python3 youtube-downloader.py
-```
-Or directly if executable:
-```bash
-./youtube-downloader.py
 ```
 
 Follow the on-screen interactive prompts to choose your format, quality, and output preferences.
@@ -264,10 +446,10 @@ For age-restricted content, unlisted videos, or YouTube Premium / Member-only st
 
 ```bash
 # Launch without checking for yt-dlp updates
-python3 youtube-downloader.py --no-update
+yt-dnld --no-update
 
 # Run only the yt-dlp updater and exit
-python3 youtube-downloader.py --update
+yt-dnld --update
 ```
 
 ---
@@ -276,7 +458,7 @@ python3 youtube-downloader.py --update
 
 ```mermaid
 flowchart TD
-    Start(["Launch Program"]) --> Deps["Check Dependencies (yt-dlp, FFmpeg)"]
+    Start(["Launch yt-dnld"]) --> Deps["Check Dependencies (yt-dlp, FFmpeg)"]
     Deps --> UpdateCheck{"--skip-update flag?"}
     UpdateCheck -- No --> DoUpdate["UpdateBar: yt-dlp -U / pip upgrade"]
     UpdateCheck -- Yes --> UserInput
@@ -302,13 +484,13 @@ flowchart TD
 ### 1. YouTube downloads are extremely slow or fail with `n-challenge`
 YouTube frequently updates its JavaScript challenge algorithm to throttle download speeds.
 - Ensure you have **Node.js** or **Deno** installed on your system.
-- Run `python3 youtube-downloader.py --update` to fetch the latest `yt-dlp` release.
+- Run `yt-dnld --update` to fetch the latest `yt-dlp` release.
 - Ensure `curl-cffi` is installed: `pip install --upgrade "yt-dlp[default,curl-cffi]"`.
 
 ### 2. "Sign in to confirm you're not a bot" or Age Restrictions
 Use the built-in browser cookie integration:
 1. Log in to YouTube in your browser (e.g. Chrome, Firefox, or Brave).
-2. Run the script and answer `yes` to **Configure extra options?**.
+2. Run `yt-dnld` and answer `yes` to **Configure extra options?**.
 3. Answer `yes` to **Use browser cookies** and pick your browser.
 
 ### 3. Missing Dependencies Error
@@ -316,7 +498,29 @@ If the script exits with:
 ```text
 ✗  Missing dependencies: ffmpeg
 ```
-Follow the [Installing FFmpeg](#installing-ffmpeg) section above for your operating system.
+Follow the installation section for your operating system or install via your package manager.
+
+---
+
+## 🗑️ Uninstallation
+
+If you ever wish to remove AS YouTube Downloader and its shortcuts completely:
+
+- **Windows**:
+  ```powershell
+  .\uninstall.ps1
+  # Or run installers\uninstall-windows.ps1
+  ```
+- **Linux**:
+  ```bash
+  ./uninstall.sh
+  # Or run installers/uninstall-linux.sh
+  ```
+- **macOS**:
+  ```bash
+  ./uninstall.sh
+  # Or run installers/uninstall-macos.sh
+  ```
 
 ---
 

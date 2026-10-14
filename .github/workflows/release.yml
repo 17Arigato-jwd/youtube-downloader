@@ -1,0 +1,194 @@
+name: Build & Release Installers
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact_name: yt-dnld-linux-x86_64
+            archive_ext: tar.gz
+            binary_name: yt-dnld
+          - os: windows-latest
+            artifact_name: yt-dnld-windows-x64
+            archive_ext: zip
+            binary_name: yt-dnld.exe
+          - os: macos-latest
+            artifact_name: yt-dnld-macos-universal
+            archive_ext: zip
+            binary_name: yt-dnld
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies & PyInstaller
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pyinstaller colorama "yt-dlp[default,curl-cffi]"
+
+      - name: Build standalone binary with PyInstaller
+        run: |
+          pyinstaller --noconfirm --clean --onefile --name yt-dnld youtube-downloader.py
+
+      # ── Linux Packaging ─────────────────────────────────────────────────────
+      - name: Package Linux release
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p release-pkg
+          cp dist/yt-dnld release-pkg/
+          cp youtube-downloader.svg release-pkg/
+
+          # Include lightweight standalone installer script in the release bundle
+          cat << 'EOF' > release-pkg/install.sh
+          #!/usr/bin/env bash
+          set -e
+          BIN_DIR="$HOME/.local/bin"
+          APP_DIR="$HOME/.local/share/applications"
+          ICON_DIR="$HOME/.local/share/icons/hicolor/scalable/apps"
+          mkdir -p "$BIN_DIR" "$APP_DIR" "$ICON_DIR"
+
+          cp yt-dnld "$BIN_DIR/yt-dnld"
+          chmod +x "$BIN_DIR/yt-dnld"
+          cp youtube-downloader.svg "$ICON_DIR/youtube-downloader.svg"
+
+          cat << 'DESK' > "$APP_DIR/youtube-downloader.desktop"
+          [Desktop Entry]
+          Name=AS YouTube Downloader
+          Comment=YouTube Downloader via yt-dlp
+          Exec=sh -c '$HOME/.local/bin/yt-dnld; echo; read -p "Press Enter to exit..."'
+          Icon=youtube-downloader
+          Terminal=true
+          Type=Application
+          Categories=AudioVideo;Audio;Video;Network;
+          DESK
+          chmod +x "$APP_DIR/youtube-downloader.desktop"
+
+          echo "✓ Successfully installed yt-dnld to $BIN_DIR/yt-dnld"
+          echo "✓ Created application menu launcher."
+          EOF
+          chmod +x release-pkg/install.sh
+
+          tar -czf ${{ matrix.artifact_name }}.tar.gz -C release-pkg .
+
+      # ── Windows Packaging ───────────────────────────────────────────────────
+      - name: Package Windows release
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path release-pkg -Force | Out-Null
+          Copy-Item -Path "dist\yt-dnld.exe" -Destination "release-pkg\"
+          Copy-Item -Path "youtube-downloader.svg" -Destination "release-pkg\"
+
+          # Standalone install script inside the release zip
+          $installScript = @"
+          `$targetDir = Join-Path `$env:LOCALAPPDATA "Programs\youtube-downloader"
+          New-Item -ItemType Directory -Path `$targetDir -Force | Out-Null
+          Copy-Item -Path "yt-dnld.exe" -Destination `$targetDir -Force
+          Copy-Item -Path "youtube-downloader.svg" -Destination `$targetDir -Force
+
+          # Add to User PATH
+          `$userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+          if (`$userPath -split ";" -notcontains `$targetDir) {
+              `$newUserPath = if ([string]::IsNullOrWhiteSpace(`$userPath)) { `$targetDir } else { "`$userPath;`$targetDir" }
+              [Environment]::SetEnvironmentVariable("Path", `$newUserPath, "User")
+          }
+
+          # Create Start Menu & Desktop Shortcuts
+          `$wsh = New-Object -ComObject WScript.Shell
+          `$startMenu = Join-Path `$env:APPDATA "Microsoft\Windows\Start Menu\Programs\AS YouTube Downloader.lnk"
+          `$sc = `$wsh.CreateShortcut(`$startMenu)
+          `$sc.TargetPath = Join-Path `$targetDir "yt-dnld.exe"
+          `$sc.Save()
+
+          `$desktop = Join-Path ([Environment]::GetFolderPath("Desktop")) "AS YouTube Downloader.lnk"
+          `$dsc = `$wsh.CreateShortcut(`$desktop)
+          `$dsc.TargetPath = Join-Path `$targetDir "yt-dnld.exe"
+          `$dsc.Save()
+
+          Write-Host "✓ Installed yt-dnld.exe to `$targetDir" -ForegroundColor Green
+          Write-Host "✓ Added to PATH and created Start Menu and Desktop shortcuts." -ForegroundColor Green
+          "@
+          Set-Content -Path "release-pkg\install.ps1" -Value $installScript -Encoding UTF8
+
+          Compress-Archive -Path release-pkg\* -DestinationPath "${{ matrix.artifact_name }}.zip"
+
+      # ── macOS Packaging ─────────────────────────────────────────────────────
+      - name: Package macOS release
+        if: runner.os == 'macOS'
+        run: |
+          mkdir -p release-pkg
+          cp dist/yt-dnld release-pkg/
+          cp youtube-downloader.svg release-pkg/
+
+          cat << 'EOF' > release-pkg/install.command
+          #!/usr/bin/env bash
+          cd "$(dirname "$0")"
+          mkdir -p "$HOME/.local/bin" "$HOME/Applications"
+          cp yt-dnld "$HOME/.local/bin/yt-dnld"
+          chmod +x "$HOME/.local/bin/yt-dnld"
+
+          if command -v osacompile &>/dev/null; then
+              osacompile -o "$HOME/Applications/AS YouTube Downloader.app" -e 'tell application "Terminal" to do script "yt-dnld"'
+          fi
+
+          echo "✓ Installed yt-dnld to $HOME/.local/bin/yt-dnld"
+          echo "✓ Created ~/Applications/AS YouTube Downloader.app"
+          EOF
+          chmod +x release-pkg/install.command
+
+          zip -r "${{ matrix.artifact_name }}.zip" release-pkg/
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.artifact_name }}.${{ matrix.archive_ext }}
+
+  release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: Generate Checksums
+        run: |
+          cd release-assets
+          sha256sum * > checksums.txt
+          cat checksums.txt
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+        with:
+          files: release-assets/*
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+
