@@ -198,6 +198,11 @@ jobs:
               fi
           fi
 
+          # Check Node.js (for YouTube n-challenge solving)
+          if ! command -v node &>/dev/null && ! command -v nodejs &>/dev/null && ! command -v deno &>/dev/null; then
+              echo "ℹ Note: Installing Node.js is recommended to avoid YouTube download throttling."
+          fi
+
           cp yt-dnld "$BIN_DIR/yt-dnld"
           chmod +x "$BIN_DIR/yt-dnld"
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-AS Youtube Downloader — based on yt-dlp — version 1.7.1
+AS Youtube Downloader — based on yt-dlp — version 1.7.2
 """
 
 import subprocess
@@ -13,13 +13,22 @@ import threading
 import itertools
 import time
 from pathlib import Path
-from colorama import init, Fore, Style
 
-init(autoreset=True)
+try:
+    from colorama import init, Fore, Style
+    init(autoreset=True)
+except ImportError:
+    class DummyColor:
+        def __getattr__(self, name):
+            return ""
+    Fore = DummyColor()
+    Style = DummyColor()
+    def init(*args, **kwargs):
+        pass
 
 # ─── Constants ────────────────────────────────────────────────────────────────
 
-VERSION       = "1.7.1"
+VERSION       = "1.7.2"
 DEFAULT_DIR   = str(Path.home() / "Downloads")
 
 AUDIO_FORMATS = ["MP3", "WAV", "FLAC", "M4A", "OPUS"]
@@ -93,11 +102,37 @@ def section(title: str):
     print(f"\n{Fore.WHITE}┌─ {title} {bar}")
 
 
+def get_ytdlp_cmd() -> list:
+    """Return command prefix for invoking yt-dlp (binary or python module)."""
+    if shutil.which("yt-dlp"):
+        return ["yt-dlp"]
+    try:
+        import yt_dlp
+        return [sys.executable, "-m", "yt_dlp"]
+    except ImportError:
+        return ["yt-dlp"]
+
+
 def check_deps():
-    missing = [t for t in ("yt-dlp", "ffmpeg") if shutil.which(t) is None]
+    missing = []
+    has_ytdlp = shutil.which("yt-dlp") is not None
+    if not has_ytdlp:
+        try:
+            import yt_dlp
+            has_ytdlp = True
+        except ImportError:
+            pass
+    if not has_ytdlp:
+        missing.append("yt-dlp")
+    if shutil.which("ffmpeg") is None:
+        missing.append("ffmpeg")
+    try:
+        import colorama  # noqa: F401
+    except ImportError:
+        missing.append("colorama")
     if missing:
         print(f"{Fore.RED}✗  Missing dependencies: {', '.join(missing)}")
-        print(f"{Fore.YELLOW}   Install: pip install 'yt-dlp[default,curl-cffi]'  |  https://ffmpeg.org/download.html")
+        print(f"{Fore.YELLOW}   Install: pip install colorama 'yt-dlp[default,curl-cffi]'  |  https://ffmpeg.org/download.html")
         sys.exit(1)
 
 
@@ -624,7 +659,7 @@ def build_cmd(url: str, opts: dict) -> list:
     is_audio = opts["fmt"] in AUDIO_FORMATS
     out_tpl  = os.path.join(opts["out_dir"], f"{opts['name']}.%(ext)s")
 
-    cmd = ["yt-dlp", url, "-o", out_tpl, "--newline", "--continue", "--ignore-errors"]
+    cmd = get_ytdlp_cmd() + [url, "-o", out_tpl, "--newline", "--continue", "--ignore-errors"]
 
     # Resolve JS runtime explicitly so yt-dlp can solve YouTube's n-challenge
     # even inside sandboxed environments (Flatpak, venv) where PATH is stripped.
@@ -724,29 +759,28 @@ def fetch_media_info(url: str, opts: dict) -> dict | None:
         pass
 
     # Attempt 2: yt-dlp CLI subprocess fallback
-    if shutil.which("yt-dlp"):
-        cmd = ["yt-dlp", "--dump-json", "--no-download", "-f", fmt_spec]
-        if js_runtime:
-            cmd += ["--js-runtimes", js_runtime]
-        if not opts.get("playlist", False):
-            cmd += ["--no-playlist"]
-        if opts.get("cookies_browser"):
-            cmd += ["--cookies-from-browser", opts["cookies_browser"]]
-        cmd.append(url)
+    cmd = get_ytdlp_cmd() + ["--dump-json", "--no-download", "-f", fmt_spec]
+    if js_runtime:
+        cmd += ["--js-runtimes", js_runtime]
+    if not opts.get("playlist", False):
+        cmd += ["--no-playlist"]
+    if opts.get("cookies_browser"):
+        cmd += ["--cookies-from-browser", opts["cookies_browser"]]
+    cmd.append(url)
 
-        try:
-            res = subprocess.run(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                timeout=25,
-            )
-            if res.returncode == 0 and res.stdout.strip():
-                first_line = res.stdout.strip().split("\n")[0]
-                return json.loads(first_line)
-        except Exception:
-            pass
+    try:
+        res = subprocess.run(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=25,
+        )
+        if res.returncode == 0 and res.stdout.strip():
+            first_line = res.stdout.strip().split("\n")[0]
+            return json.loads(first_line)
+    except Exception:
+        pass
 
     return None
 
@@ -1080,7 +1114,8 @@ def collect_options(urls: list) -> dict:
     # ── Output ────────────────────────────────────────────────────────────────
     section("Output")
     opts["name"]    = ask("Filename / template (no extension)", default="%(title)s", question=False)
-    opts["out_dir"] = ask("Output directory", default=DEFAULT_DIR, question=False)
+    raw_dir         = ask("Output directory", default=DEFAULT_DIR, question=False)
+    opts["out_dir"] = os.path.abspath(os.path.expanduser(os.path.expandvars(raw_dir)))
     os.makedirs(opts["out_dir"], exist_ok=True)
 
     # ── Options ───────────────────────────────────────────────────────────────
@@ -1099,15 +1134,14 @@ def collect_options(urls: list) -> dict:
     # ── Extra Options Sub-menu ────────────────────────────────────────────────
     if ask_bool("Configure extra options", default=False, question=True):
 
-        if not is_audio:
-            opts["sponsorblock"] = ask_bool(
-                "Remove sponsor/intro/outro segments (SponsorBlock)",
-                default=False, question=True
-            )
-            opts["chapters"] = ask_bool(
-                "Split output by chapters",
-                default=False, question=True
-            )
+        opts["sponsorblock"] = ask_bool(
+            "Remove sponsor/intro/outro segments (SponsorBlock)",
+            default=False, question=True
+        )
+        opts["chapters"] = ask_bool(
+            "Split output by chapters",
+            default=False, question=True
+        )
 
         if ask_bool(
             "Use browser cookies (age-restricted / members-only)",
@@ -1158,7 +1192,9 @@ def download_one(url: str, opts: dict, label: str = ""):
     rc, saved_file = run_download(cmd, progress, spinner, is_audio_only=is_audio_only)
 
     if rc == 0:
-        if not saved_file:
+        if is_playlist:
+            saved_file = opts["out_dir"]
+        elif not saved_file:
             if opts["name"] == "%(title)s" and info and info.get("title"):
                 safe_title = re.sub(r'[\\/*?:"<>|]', "", info["title"])
                 saved_file = os.path.join(opts["out_dir"], f"{safe_title}.{opts['fmt'].lower()}")
@@ -1174,6 +1210,22 @@ def download_one(url: str, opts: dict, label: str = ""):
 # ─── Entry Point ──────────────────────────────────────────────────────────────
 
 def main():
+    if "-v" in sys.argv or "--version" in sys.argv:
+        print(f"AS YouTube Downloader v{VERSION}")
+        sys.exit(0)
+
+    if "-h" in sys.argv or "--help" in sys.argv:
+        banner()
+        print(f"  {Fore.CYAN}AS YouTube Downloader v{VERSION}{Style.RESET_ALL} — based on yt-dlp\n")
+        print(f"  {Fore.WHITE}Usage:{Style.RESET_ALL} yt-dnld [options]\n")
+        print(f"  {Fore.WHITE}Options:{Style.RESET_ALL}")
+        print(f"    {Fore.CYAN}-h, --help{Style.RESET_ALL}       Show this help message and exit")
+        print(f"    {Fore.CYAN}-v, --version{Style.RESET_ALL}    Show version number and exit")
+        print(f"    {Fore.CYAN}--update{Style.RESET_ALL}         Check and update yt-dlp to latest version and exit")
+        print(f"    {Fore.CYAN}--no-update{Style.RESET_ALL}      Skip the startup yt-dlp update check")
+        print(f"    {Fore.CYAN}--skip-update{Style.RESET_ALL}    Alias for --no-update\n")
+        sys.exit(0)
+
     banner()
     check_deps()
 

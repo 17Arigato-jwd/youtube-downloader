@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/17Arigato-jwd/youtube-downloader/releases"><img src="https://img.shields.io/badge/release-v1.7.1-blue.svg?style=flat-square" alt="Release v1.7.1" /></a>
+  <a href="https://github.com/17Arigato-jwd/youtube-downloader/releases"><img src="https://img.shields.io/badge/release-v1.7.2-blue.svg?style=flat-square" alt="Release v1.7.2" /></a>
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.10+-3776AB.svg?style=flat-square&logo=python&logoColor=white" alt="Python 3.10+" /></a>
   <a href="https://github.com/yt-dlp/yt-dlp"><img src="https://img.shields.io/badge/powered%20by-yt--dlp-red.svg?style=flat-square" alt="Powered by yt-dlp" /></a>
   <a href="https://ffmpeg.org/"><img src="https://img.shields.io/badge/media%20engine-FFmpeg-007808.svg?style=flat-square&logo=ffmpeg&logoColor=white" alt="FFmpeg" /></a>
@@ -22,7 +22,7 @@
 ## 📖 Table of Contents
 
 - [Overview](#-overview)
-- [Supported Platforms & Devices](#-supported-platforms--devices)
+- [Supported Platforms & Environments](#-supported-platforms--environments)
 - [Key Features](#-key-features)
 - [Terminal Preview](#-terminal-preview)
 - [Releases & Automated Installers (Windows, Linux, macOS)](#-releases--automated-installers)
@@ -104,9 +104,9 @@ AS YouTube Downloader is pure Python and relies only on standard ANSI escape seq
 ## 🖥️ Terminal Preview
 
 ```text
-╔═══════════════════════════════════════════════════════════════════╗
-║  AS Youtube Downloader | based on yt-dlp | version 1.7.1          ║
-╚═══════════════════════════════════════════════════════════════════╝
+╔═══════════════════════════════════════════════════════════╗
+║  AS Youtube Downloader | based on yt-dlp | version 1.7.2  ║
+╚═══════════════════════════════════════════════════════════╝
 
 ┌─ Updates ──────────────────────────────────────
 Checking for yt-dlp updates…
@@ -170,8 +170,11 @@ Pre-built standalone releases and installer packages for **Windows**, **Linux**,
 2. Extract the ZIP archive.
 3. Right-click **`install.ps1`** and choose **"Run with PowerShell"** (or run `.\install.ps1` in PowerShell).
 
+> [!TIP]
+> If installing from a cloned git repository instead of a release archive, simply open PowerShell in the repo root and run `.\install.ps1`.
+
 **What the installer does on Windows:**
-- Installs `yt-dnld.exe` into `%LOCALAPPDATA%\Programs\youtube-downloader`.
+- Installs `yt-dnld.exe` (or python environment) into `%LOCALAPPDATA%\Programs\youtube-downloader`.
 - Adds the folder to your **User PATH** in the Windows Registry so you can type `yt-dnld` from any Command Prompt or PowerShell window.
 - Creates **Start Menu** and **Desktop** shortcuts titled **"AS YouTube Downloader"**.
 
@@ -188,8 +191,11 @@ Pre-built standalone releases and installer packages for **Windows**, **Linux**,
    ./install.sh
    ```
 
+> [!TIP]
+> If installing from a cloned git repository instead of a release archive, simply run `./install.sh` from the repository root.
+
 **What the installer does on Linux:**
-- Installs the standalone executable to `~/.local/bin/yt-dnld` (available in any terminal).
+- Installs the standalone executable (or wrapper) to `~/.local/bin/yt-dnld` (available in any terminal).
 - Installs the SVG icon and `.desktop` launcher to `~/.local/share/applications` so it appears in your system application menu.
 
 ---
@@ -198,6 +204,9 @@ Pre-built standalone releases and installer packages for **Windows**, **Linux**,
 
 1. Download **`yt-dnld-macos-universal.zip`** from [Releases](https://github.com/17Arigato-jwd/youtube-downloader/releases).
 2. Extract the archive and double-click **`install.command`** (or execute `./install.command` in Terminal).
+
+> [!TIP]
+> If installing from a cloned git repository instead of a release archive, simply run `./install.sh` from the repository root.
 
 **What the installer does on macOS:**
 - Installs `yt-dnld` to `~/.local/bin/yt-dnld` (and `/usr/local/bin`).
@@ -439,12 +448,20 @@ For age-restricted content, unlisted videos, or YouTube Premium / Member-only st
 | Flag | Purpose |
 | :--- | :--- |
 | *(no flags)* | Runs standard startup check and opens interactive downloader interface. |
-| `--no-update` / `--skip-update` | Skips the startup yt-dlp update check (useful for offline use or slow connections). |
+| `-h`, `--help` | Displays usage help message with all available options and exits. |
+| `-v`, `--version` | Displays current version number and exits. |
 | `--update` | Runs the animated yt-dlp update check and immediately exits when finished. |
+| `--no-update` / `--skip-update` | Skips the startup yt-dlp update check (useful for offline use or slow connections). |
 
 ### Examples
 
 ```bash
+# Display help and available options
+yt-dnld --help
+
+# Show version number
+yt-dnld --version
+
 # Launch without checking for yt-dlp updates
 yt-dnld --no-update
 
