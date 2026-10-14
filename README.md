@@ -34,7 +34,6 @@
 - [Command-Line Flags](#-command-line-flags)
 - [How It Works](#-how-it-works)
 - [Troubleshooting](#-troubleshooting)
-- [License](#-license)
 
 ---
 
@@ -318,12 +317,6 @@ If the script exits with:
 ✗  Missing dependencies: ffmpeg
 ```
 Follow the [Installing FFmpeg](#installing-ffmpeg) section above for your operating system.
-
----
-
-## 📄 License
-
-This project is open-source and available under the terms of the **MIT License**. See the repository details for more information.
 
 ---
 
