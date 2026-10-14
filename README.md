@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/17Arigato-jwd/youtube-downloader/releases"><img src="https://img.shields.io/badge/release-v1.6.4-blue.svg?style=flat-square" alt="Release v1.6.4" /></a>
+  <a href="https://github.com/17Arigato-jwd/youtube-downloader/releases"><img src="https://img.shields.io/badge/release-v1.7.0-blue.svg?style=flat-square" alt="Release v1.7.0" /></a>
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.10+-3776AB.svg?style=flat-square&logo=python&logoColor=white" alt="Python 3.10+" /></a>
   <a href="https://github.com/yt-dlp/yt-dlp"><img src="https://img.shields.io/badge/powered%20by-yt--dlp-red.svg?style=flat-square" alt="Powered by yt-dlp" /></a>
   <a href="https://ffmpeg.org/"><img src="https://img.shields.io/badge/media%20engine-FFmpeg-007808.svg?style=flat-square&logo=ffmpeg&logoColor=white" alt="FFmpeg" /></a>
@@ -105,7 +105,7 @@ AS YouTube Downloader is pure Python and relies only on standard ANSI escape seq
 
 ```text
 ╔═══════════════════════════════════════════════════════════════════╗
-║  AS Youtube Downloader | based on yt-dlp | version 1.6.4          ║
+║  AS Youtube Downloader | based on yt-dlp | version 1.7.0          ║
 ╚═══════════════════════════════════════════════════════════════════╝
 
 ┌─ Updates ──────────────────────────────────────
