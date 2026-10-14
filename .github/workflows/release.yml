@@ -59,7 +59,7 @@ jobs:
           cp dist/yt-dnld release-pkg/
           cp youtube-downloader.svg release-pkg/
 
-          # Include lightweight standalone installer script in the release bundle
+          # Include standalone installer script in the release bundle with dependency checks
           cat << 'EOF' > release-pkg/install.sh
           #!/usr/bin/env bash
           set -e
@@ -67,6 +67,28 @@ jobs:
           APP_DIR="$HOME/.local/share/applications"
           ICON_DIR="$HOME/.local/share/icons/hicolor/scalable/apps"
           mkdir -p "$BIN_DIR" "$APP_DIR" "$ICON_DIR"
+
+          # ── Check FFmpeg ─────────────────────────────────────────────
+          if ! command -v ffmpeg &>/dev/null; then
+              echo "⚠ FFmpeg is required for merging video/audio and metadata."
+              echo "  Attempting to install FFmpeg via system package manager…"
+              if command -v apt-get &>/dev/null; then
+                  sudo apt-get update && sudo apt-get install -y ffmpeg || true
+              elif command -v dnf &>/dev/null; then
+                  sudo dnf install -y ffmpeg || true
+              elif command -v pacman &>/dev/null; then
+                  sudo pacman -S --noconfirm ffmpeg || true
+              elif command -v zypper &>/dev/null; then
+                  sudo zypper install -y ffmpeg || true
+              elif command -v apk &>/dev/null; then
+                  sudo apk add --no-cache ffmpeg || true
+              fi
+          fi
+
+          # ── Check Node.js (for YouTube n-challenge solving) ──────────
+          if ! command -v node &>/dev/null && ! command -v nodejs &>/dev/null && ! command -v deno &>/dev/null; then
+              echo "ℹ Note: Installing Node.js is recommended to prevent YouTube speed throttling."
+          fi
 
           cp yt-dnld "$BIN_DIR/yt-dnld"
           chmod +x "$BIN_DIR/yt-dnld"
@@ -100,8 +122,26 @@ jobs:
           Copy-Item -Path "dist\yt-dnld.exe" -Destination "release-pkg\"
           Copy-Item -Path "youtube-downloader.svg" -Destination "release-pkg\"
 
-          # Standalone install script inside the release zip
+          # Standalone install script inside the release zip with dependency checks
           $installScript = @"
+          # Check FFmpeg
+          if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue)) {
+              Write-Host "⚠ FFmpeg not found. Attempting to install via winget..." -ForegroundColor Yellow
+              if (Get-Command winget -ErrorAction SilentlyContinue) {
+                  winget install -e --id Gyan.FFmpeg --accept-package-agreements --accept-source-agreements
+              } else {
+                  Write-Host "Please install FFmpeg from https://ffmpeg.org/download.html" -ForegroundColor Yellow
+              }
+          }
+
+          # Check Node.js
+          if (-not (Get-Command node -ErrorAction SilentlyContinue) -and -not (Get-Command deno -ErrorAction SilentlyContinue)) {
+              Write-Host "ℹ Note: Installing Node.js is recommended to avoid YouTube download throttling." -ForegroundColor Cyan
+              if (Get-Command winget -ErrorAction SilentlyContinue) {
+                  winget install -e --id OpenJS.NodeJS.LTS --accept-package-agreements --accept-source-agreements
+              }
+          }
+
           `$targetDir = Join-Path `$env:LOCALAPPDATA "Programs\youtube-downloader"
           New-Item -ItemType Directory -Path `$targetDir -Force | Out-Null
           Copy-Item -Path "yt-dnld.exe" -Destination `$targetDir -Force
@@ -144,16 +184,29 @@ jobs:
           cat << 'EOF' > release-pkg/install.command
           #!/usr/bin/env bash
           cd "$(dirname "$0")"
-          mkdir -p "$HOME/.local/bin" "$HOME/Applications"
-          cp yt-dnld "$HOME/.local/bin/yt-dnld"
-          chmod +x "$HOME/.local/bin/yt-dnld"
+          BIN_DIR="$HOME/.local/bin"
+          APP_DIR="$HOME/Applications"
+          mkdir -p "$BIN_DIR" "$APP_DIR"
 
-          if command -v osacompile &>/dev/null; then
-              osacompile -o "$HOME/Applications/AS YouTube Downloader.app" -e 'tell application "Terminal" to do script "yt-dnld"'
+          # Check FFmpeg
+          if ! command -v ffmpeg &>/dev/null; then
+              echo "⚠ FFmpeg is missing. Installing via Homebrew…"
+              if command -v brew &>/dev/null; then
+                  brew install ffmpeg || true
+              else
+                  echo "Please install Homebrew (https://brew.sh) and run 'brew install ffmpeg'."
+              fi
           fi
 
-          echo "✓ Installed yt-dnld to $HOME/.local/bin/yt-dnld"
-          echo "✓ Created ~/Applications/AS YouTube Downloader.app"
+          cp yt-dnld "$BIN_DIR/yt-dnld"
+          chmod +x "$BIN_DIR/yt-dnld"
+
+          if command -v osacompile &>/dev/null; then
+              osacompile -o "$APP_DIR/AS YouTube Downloader.app" -e 'tell application "Terminal" to do script "yt-dnld"'
+          fi
+
+          echo "✓ Installed yt-dnld to $BIN_DIR/yt-dnld"
+          echo "✓ Created $APP_DIR/AS YouTube Downloader.app"
           EOF
           chmod +x release-pkg/install.command
 

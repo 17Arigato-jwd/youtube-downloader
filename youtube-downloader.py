@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-AS Youtube Downloader — based on yt-dlp — version 1.7.0
+AS Youtube Downloader — based on yt-dlp — version 1.7.1
 """
 
 import subprocess
@@ -19,7 +19,7 @@ init(autoreset=True)
 
 # ─── Constants ────────────────────────────────────────────────────────────────
 
-VERSION       = "1.7.0"
+VERSION       = "1.7.1"
 DEFAULT_DIR   = str(Path.home() / "Downloads")
 
 AUDIO_FORMATS = ["MP3", "WAV", "FLAC", "M4A", "OPUS"]
